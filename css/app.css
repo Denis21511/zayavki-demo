@@ -344,6 +344,6 @@ p { margin: 0; }
 @media (min-width: 900px) { .toasts { left: auto; right: 24px; bottom: 24px; width: 380px; align-items: flex-end; } }
 .toast { pointer-events: auto; width: 100%; max-width: 380px; display: flex; gap: 12px; align-items: center; justify-content: space-between; background: var(--toast-bg); color: #fff; padding: 12px 14px; border-radius: var(--r-l); box-shadow: var(--sh-2); animation: pop .3s ease; font-size: 14px; }
 .toast p { opacity: .8; font-size: 13px; }
-.toast.ok { background: var(--green); }
-.toast.tg { background: var(--tg); }
+.toast--ok { background: var(--green); }
+.toast--tg { background: var(--tg); }
 .toast.out { opacity: 0; transform: translateY(6px); transition: .25s; }

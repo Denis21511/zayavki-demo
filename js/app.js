@@ -247,7 +247,7 @@ const themeBtn = () => `<button class="themebtn" data-theme-toggle aria-label="�
 /* ---------- всплывашки ---------- */
 function toast({ title, text = '', act, onAct, tone = '' }) {
   const el = document.createElement('div');
-  el.className = 'toast ' + tone;
+  el.className = 'toast' + (tone ? ' toast--' + tone : '');
   el.innerHTML = `<div><b>${esc(title)}</b>${text ? `<p>${esc(text)}</p>` : ''}</div>${act ? `<button class="btn btn--sm btn--light">${esc(act)}</button>` : ''}`;
   $('#toasts').appendChild(el);
   const close = () => { el.classList.add('out'); setTimeout(() => el.remove(), 250); };
