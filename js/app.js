@@ -47,8 +47,10 @@ const ICONS = {
   gift: '<rect x="3" y="8" width="18" height="13" rx="1"/><path d="M12 8v13M3 12h18M12 8S10 3 7.5 4.5 9 8 12 8zM12 8s2-5 4.5-3.5S15 8 12 8z"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   rotate: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
 };
-const icon = (n, s = 20) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+const icon = (n, s = 20) => `<svg class="ic ic-${n}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
 
 /* ---------- каталог и цены (из «Цеха», средние по Челябинску) ---------- */
 const TIERS = {
@@ -219,6 +221,28 @@ const Store = {
   },
   timeShift(ms) { this.s.shift = (this.s.shift || 0) + ms; const n = this.scan(); this.save(); return n; },
 };
+
+/* ---------- тема: как в телефоне, пока человек не выбрал сам ---------- */
+const Theme = {
+  KEY: 'zayavki.theme',
+  mq: window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null,
+  saved() { try { const t = localStorage.getItem(this.KEY); return t === 'dark' || t === 'light' ? t : null; } catch (e) { return null; } },
+  apply(t) {
+    document.documentElement.dataset.theme = t;
+    const m = $('meta[name="theme-color"]'); if (m) m.content = t === 'dark' ? '#141c27' : '#0d2440';
+  },
+  toggle() {
+    const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem(this.KEY, t); } catch (e) { /* без сохранения */ }
+    this.apply(t);
+  },
+  init() {
+    this.apply(this.saved() || (this.mq && this.mq.matches ? 'dark' : 'light'));
+    if (this.mq && this.mq.addEventListener) this.mq.addEventListener('change', e => { if (!this.saved()) this.apply(e.matches ? 'dark' : 'light'); });
+    document.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) this.toggle(); });
+  },
+};
+const themeBtn = () => `<button class="themebtn" data-theme-toggle aria-label="Светлая или тёмная тема" title="Светлая / тёмная тема">${icon('moon', 18)}${icon('sun', 18)}</button>`;
 
 /* ---------- всплывашки ---------- */
 function toast({ title, text = '', act, onAct, tone = '' }) {
@@ -490,7 +514,7 @@ const Quiz = {
         <button class="btn btn--primary btn--lg btn--block">Получить расчёт</button>
         <small class="muted">Нажимая кнопку, вы соглашаетесь на обработку персональных данных. Без спама: только расчёт по вашей заявке.</small>
       </form>`;
-    v.innerHTML = `<div class="qbar"><span>${icon('user', 16)}Так клиент видит расчёт на вашем сайте</span><a href="#/board" class="link">Выйти ${icon('x', 14)}</a></div>
+    v.innerHTML = `<div class="qbar"><span>${icon('user', 16)}Так клиент видит расчёт на вашем сайте</span><div class="qbar__r">${themeBtn()}<a href="#/board" class="link">Выйти ${icon('x', 14)}</a></div></div>
       <div class="quiz">
         <div class="quiz__brand"><b>${esc(co)}</b><small>${esc(s.city)} · мебель на заказ</small></div>
         ${st.done ? '' : `<div class="quiz__top"><h1>Рассчитайте стоимость мебели за 1 минуту</h1><div class="prog"><i style="width:${(st.step + 1) / steps.length * 100}%"></i></div><small class="muted">Шаг ${st.step + 1} из ${steps.length}${st.step ? ` · <button class="link" id="back">${icon('left', 14)}назад</button>` : ''}</small></div>`}
@@ -565,7 +589,7 @@ const App = {
     document.title = `${s.company} · Заявки`;
     root.className = '';
     root.innerHTML = `<header class="top"><a href="#/" class="logo"><span class="logo__m"></span>${esc(s.company)}<small>Заявки</small></a>
-      <nav class="nav">${NAV.map(([k, h, ic, t]) => `<a href="${h}" class="${on === k ? 'is-on' : ''}">${icon(ic, 20)}<span>${t}</span>${k === 'tg' ? '<em class="badge" id="tgbadge"></em>' : ''}</a>`).join('')}</nav></header>
+      <div class="top__r"><nav class="nav">${NAV.map(([k, h, ic, t]) => `<a href="${h}" class="${on === k ? 'is-on' : ''}">${icon(ic, 20)}<span>${t}</span>${k === 'tg' ? '<em class="badge" id="tgbadge"></em>' : ''}</a>`).join('')}</nav>${themeBtn()}</div></header>
       <main id="view"></main>`;
     const v = $('#view');
     if (page === 'board') Views.board(v);
@@ -577,6 +601,7 @@ const App = {
   },
   badges() { const b = $('#tgbadge'); if (b) { const n = Store.unread(); b.textContent = n || ''; b.hidden = !n; } },
   start() {
+    Theme.init();
     Store.load();
     window.addEventListener('hashchange', () => App.render());
     // время идёт само: раз в 30 секунд проверяем просрочки
