@@ -242,7 +242,7 @@ const Theme = {
     document.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) this.toggle(); });
   },
 };
-const themeBtn = () => `<button class="themebtn" data-theme-toggle aria-label="Светлая или тёмная тема" title="Светлая / тёмная тема">${icon('moon', 18)}${icon('sun', 18)}</button>`;
+const themeBtn = () => `<button class="themebtn" data-theme-toggle aria-label="Светлая или тёмная тема" title="Светлая / тёмная тема">${icon('moon', 18)}${icon('sun', 18)}<span class="t-dark">Тёмная</span><span class="t-light">Светлая</span></button>`;
 
 /* ---------- всплывашки ---------- */
 function toast({ title, text = '', act, onAct, tone = '' }) {
