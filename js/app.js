@@ -61,6 +61,24 @@ const TIERS = {
 const WHEN = { month: 'в ближайший месяц', q: 'через 1–3 месяца', look: 'пока присматривается' };
 const CHANNEL = { whatsapp: 'WhatsApp', telegram: 'Telegram', call: 'звонок' };
 const OTHER_KINDS = ['Прихожая', 'Гардеробная', 'Детская', 'Шкаф в комнату', 'Мебель для ванной', 'Другое'];
+const CATS = {
+  kitchen: { label: 'Кухня', sub: 'на заказ по вашим размерам' },
+  kupe: { label: 'Шкаф-купе', sub: 'корпусный или в нишу', box: 'Шкаф-купе', niche: 'Шкаф-купе в нишу' },
+  other: { label: 'Другая мебель', sub: 'прихожая, гардеробная, детская' },
+};
+/* тексты квиза; в персональном демо их и каталог меняет js/companies.js → m (что делает компания и её цены) */
+const MENU = {
+  cats: ['kitchen', 'kupe', 'other'], tag: 'мебель на заказ', what: 'кухню', title: 'Рассчитайте стоимость мебели за 1 минуту',
+  tierQ: 'Какие материалы рассматриваете?', gift: 'Замер и 3D-проект бесплатно при заказе', alt: 'другие фасады',
+  note: 'Точную цену назовём после бесплатного замера: она зависит от фурнитуры, столешницы и техники.',
+};
+function useMenu(m) {
+  if (!m) return;
+  for (const k in m.tiers || {}) Object.assign(TIERS[k], m.tiers[k]);
+  for (const k in m.catL || {}) Object.assign(CATS[k], m.catL[k]);
+  if (m.kinds) OTHER_KINDS.splice(0, OTHER_KINDS.length, ...m.kinds);
+  for (const k in MENU) if (m[k]) MENU[k] = m[k];
+}
 
 function priceOf(q) {
   const T = TIERS[q.tier];
@@ -73,7 +91,7 @@ function priceOf(q) {
 }
 function itemOf(q) {
   if (q.cat === 'kitchen') return `${{ line: 'Кухня прямая', corner: 'Кухня угловая', u: 'Кухня П-образная' }[q.layout]} ${fmt1(q.size)} м`;
-  if (q.cat === 'kupe') return `${q.layout === 'niche' ? 'Шкаф-купе в нишу' : 'Шкаф-купе'} ${fmt1(q.size)} м`;
+  if (q.cat === 'kupe') return `${q.layout === 'niche' ? CATS.kupe.niche : CATS.kupe.box} ${fmt1(q.size)} м`;
   return q.kind;
 }
 const range = p => `${rub(p.lo)} – ${rub(p.hi)}`;
@@ -114,7 +132,7 @@ function templateFor(l, level = 1) {
     measure: `${l.name}, добрый день! Проект по вашему заказу (${item}) почти готов, пришлю сегодня вместе с точной ценой.`,
     quote: level === 2
       ? `${l.name}, не буду надоедать, напишу один раз. Если заказ ещё актуален, закреплю цену до конца месяца. Если решили иначе, просто напишите, я пойму.`
-      : `${l.name}, добрый день! Успели посмотреть проект? Если что-то смущает в цене, скажите: подберём вариант, например другие фасады или оплату частями.`,
+      : `${l.name}, добрый день! Успели посмотреть проект? Если что-то смущает в цене, скажите: подберём вариант, например ${MENU.alt} или оплату частями.`,
   }[l.stage] || '';
 }
 
@@ -137,6 +155,15 @@ function seed(company, city) {
     { name: 'Алексей', phone: '+7 900 000-38-81', channel: 'whatsapp', source: 'Квиз на сайте', q: { cat: 'kitchen', layout: 'corner', size: 3.6, tier: 'pro', when: 'q' }, stage: 'quote', ago: 8 * DAY, inStage: 4 * DAY, lostAgo: DAY, lost: 'Дорого', replyMin: 55 },
     { name: 'Юлия', phone: '+7 900 000-07-48', channel: 'call', source: 'Авито', q: { cat: 'kupe', layout: 'box', size: 2.0, tier: 'mid', when: 'look' }, stage: 'new', ago: 6 * DAY, inStage: 6 * DAY, lostAgo: 5 * DAY, lost: 'Не отвечает', replyMin: null },
   ];
+  // у компании нет такого вида мебели — заявка про то, что она делает
+  const kinds = OTHER_KINDS.filter(k => k !== 'Другое');
+  L.forEach((o, i) => {
+    const q = o.q, has = c => MENU.cats.includes(c);
+    if (has(q.cat)) { if (q.cat === 'other' && !kinds.includes(q.kind)) q.kind = kinds[i % kinds.length]; return; }
+    o.q = has('other') ? { cat: 'other', kind: kinds[i % kinds.length], tier: q.tier, when: q.when }
+      : has('kitchen') ? { cat: 'kitchen', layout: 'line', size: 3.2, tier: q.tier, when: q.when }
+        : { cat: 'kupe', layout: 'box', size: 2.4, tier: q.tier, when: q.when };
+  });
   const s = { v: 1, company: company || 'Ваш цех', city: city || 'Челябинск', seq: 2001, shift: 0, tg: [], sent: {}, tgSeen: t0, leads: [] };
   L.reverse().forEach(o => {
     const createdAt = t0 - o.ago, stageAt = t0 - (o.inStage ?? o.ago), k = SI[o.stage].i;
@@ -157,16 +184,23 @@ function seed(company, city) {
 const Store = {
   s: null,
   now() { return Date.now() + (this.s.shift || 0); },
+  k: '',
   load() {
-    const saved = LS.get(KEY);
     const q = new URLSearchParams(location.search);
-    this.s = saved && saved.v === 1 ? saved : seed();
+    // короткая ссылка из рассылки: ?k=код → название, город, каталог и стиль из js/companies.js; у каждой компании свои демо-данные
+    const co = (window.COMPANIES || {})[(q.get('k') || '').toLowerCase()];
+    if (co) { this.k = q.get('k').toLowerCase(); useMenu(co.m); }
+    const saved = LS.get(this.key());
+    this.s = saved && saved.v === 1 ? saved : seed(co && co.n, co && co.c);
+    if (co) { this.s.company = co.n; this.s.city = co.c; }
     if (q.get('n')) this.s.company = q.get('n').trim().slice(0, 40) || this.s.company;
     if (q.get('c')) this.s.city = q.get('c').trim().slice(0, 30) || this.s.city;
+    Brand.apply(co && co.t);
     this.scan();
     this.save();
   },
-  save() { LS.set(KEY, this.s); },
+  key() { return this.k ? `${KEY}:${this.k}` : KEY; },
+  save() { LS.set(this.key(), this.s); },
   reset() { this.s = seed(this.s.company, this.s.city); this.scan(); this.save(); },
   lead(id) { return this.s.leads.find(l => l.id === +id); },
   active() { return this.s.leads.filter(l => !l.lost); },
@@ -242,6 +276,40 @@ const Theme = {
     document.addEventListener('click', e => { if (e.target.closest('[data-theme-toggle]')) this.toggle(); });
   },
 };
+
+/* ---------- фирменный стиль компании: цвета, шрифт, логотип, фото с её сайта ---------- */
+const Brand = {
+  t: null,
+  hex(c) { const n = parseInt(c.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; },
+  mix(a, b, k) { const x = this.hex(a), y = this.hex(b); return '#' + x.map((v, i) => Math.round(v * (1 - k) + y[i] * k).toString(16).padStart(2, '0')).join(''); },
+  lum(c) { const [r, g, b] = this.hex(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }); return .2126 * r + .7152 * g + .0722 * b; },
+  apply(t) {
+    this.t = t || null;
+    if (!t) return;
+    const p = t.p, pi = t.pi || (this.lum(p) > .45 ? '#141414' : '#ffffff');
+    const head = t.h || (this.lum(p) < .2 ? p : '#1b1d21');
+    const fh = t.font ? `'${t.font}', var(--font)` : 'var(--font)';
+    const common = `--navy:${p};--on-navy:${pi};--blue:${p};--font-h:${fh};--qbar:#15181c;--logo-bg:${t.lb || '#ffffff'};--logo-ink:${t.li || (this.lum(t.lb || '#ffffff') > .5 ? '#1b1d21' : '#ffffff')};`
+      // путь к фото — абсолютный: относительный в переменной браузер считает от css/app.css
+      + (t.hero ? `--hero:url("${new URL(t.hero, location.href).href}");` : `--hero:${t.hb || '#1c1c1c'};`);
+    const css = `:root{${common}--navy-2:${this.mix(p, '#000000', .12)};--blue-2:${this.lum(p) > .45 ? this.mix(p, '#000000', .45) : p};--blue-50:${this.mix(p, '#ffffff', .88)};--brand:${head};}`
+      + `:root[data-theme="dark"]{${common}--navy-2:${this.mix(p, '#ffffff', .12)};--blue-2:${this.lum(p) < .08 ? '#e6e6e6' : p};--blue-50:${this.mix(p, '#141c27', .8)};--brand:#f1f3f5;}`
+      + (this.lum(p) < .08 ? `:root[data-theme="dark"]{--navy:#e9e9e9;--on-navy:#141414;--blue:#bdbdbd;}` : '');
+    let st = $('#brand-css'); if (!st) { st = document.createElement('style'); st.id = 'brand-css'; document.head.appendChild(st); }
+    st.textContent = css;
+    if (t.font && !$('#brand-font')) {
+      const l = document.createElement('link'); l.id = 'brand-font'; l.rel = 'stylesheet';
+      l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(t.font).replace(/%20/g, '+')}:wght@300;400;600;700;800&display=swap`;
+      document.head.appendChild(l);
+    }
+    document.documentElement.classList.toggle('is-up', !!t.up);
+    if (t.dark && !Theme.saved()) Theme.apply('dark');
+  },
+  /* логотип: картинка с сайта или название их шрифтом */
+  logo(cls = '') { const t = this.t; return t.logo ? `<img src="${esc(t.logo)}" alt="${esc(Store.s.company)}" class="${cls}">${t.lt ? `<span class="blogo">${esc(t.lt)}</span>` : ''}` : `<span class="blogo">${t.lt ? t.lt.replace(/\*(.+?)\*/g, '<i>$1</i>') : esc(Store.s.company)}</span>`; },
+  /* шапка «как на их сайте»: полоса с логотипом + фото первого экрана с заголовком */
+  hero(inner, note) { return `<div class="bwrap"><div class="bhead">${this.logo()}${note ? `<small>${note}</small>` : ''}</div><div class="bhero">${inner}</div></div>`; },
+};
 const themeBtn = () => `<button class="themebtn" data-theme-toggle aria-label="Светлая или тёмная тема" title="Светлая / тёмная тема">${icon('moon', 18)}${icon('sun', 18)}<span class="t-dark">Тёмная</span><span class="t-light">Светлая</span></button>`;
 
 /* ---------- всплывашки ---------- */
@@ -280,10 +348,10 @@ const Views = {
   /* --- вводная для владельца: её показывают при визите --- */
   intro(v) {
     const s = Store.s, named = s.company !== 'Ваш цех';
+    const kicker = `<div class="kicker">${named ? `Демо для «${esc(s.company)}»` : 'Демо-версия'} · ${esc(s.city)}</div>`;
     v.innerHTML = `<section class="intro">
-      <div class="kicker">${named ? `Демо для «${esc(s.company)}»` : 'Демо-версия'} · ${esc(s.city)}</div>
-      <h1>Ни одна заявка<br>не потеряется</h1>
-      <p class="lead">Клиент считает кухню на вашем сайте или по ссылке из Авито, а вы сразу получаете заявку в Telegram. Дальше система сама напоминает, кому позвонить и что написать, пока клиент не ушёл в другой цех.</p>
+      ${Brand.t ? Brand.hero(`${kicker}<h1 style="margin-top:14px">Ни одна заявка<br>не потеряется</h1>`) : `${kicker}<h1>Ни одна заявка<br>не потеряется</h1>`}
+      <p class="lead">Клиент считает ${MENU.what} на вашем сайте или по ссылке из Авито, а вы сразу получаете заявку в Telegram. Дальше система сама напоминает, кому позвонить и что написать, пока клиент не ушёл в другой цех.</p>
       <div class="cta">
         <a class="btn btn--primary btn--lg" href="#/quiz">${icon('calc')}Посмотреть глазами клиента</a>
         <a class="btn btn--outline btn--lg" href="#/board">${icon('board')}Открыть кабинет владельца</a>
@@ -469,10 +537,11 @@ function report() {
    ========================================================= */
 const Quiz = {
   st: null,
-  reset() { this.st = { step: 0, q: { cat: null, layout: null, size: 3, tier: null, when: null }, c: { name: '', phone: '', channel: 'whatsapp' }, done: null }; },
+  // один вид мебели (например, только столы) — шаг «что заказать» не нужен
+  reset() { this.st = { step: 0, q: { cat: MENU.cats.length === 1 ? MENU.cats[0] : null, layout: null, size: 3, tier: null, when: null }, c: { name: '', phone: '', channel: 'whatsapp' }, done: null }; },
   steps() {
     const q = this.st.q;
-    return ['cat', q.cat === 'other' ? 'kind' : 'layout', ...(q.cat === 'other' ? [] : ['size']), 'tier', 'when', 'contact'];
+    return [...(MENU.cats.length > 1 ? ['cat'] : []), q.cat === 'other' ? 'kind' : 'layout', ...(q.cat === 'other' ? [] : ['size']), 'tier', 'when', 'contact'];
   },
   opt(key, val, title, sub = '', art = '') {
     return `<button class="qopt ${this.st.q[key] === val ? 'is-on' : ''}" data-k="${key}" data-v="${esc(val)}">${art}<b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</button>`;
@@ -493,7 +562,7 @@ const Quiz = {
     const co = s.company === 'Ваш цех' ? 'Мебельный цех' : s.company;
     let body = '';
     if (st.done) body = this.result();
-    else if (cur === 'cat') body = `<h2>Что хотите заказать?</h2><div class="qgrid">${this.opt('cat', 'kitchen', 'Кухня', 'на заказ по вашим размерам', this.art.kitchen)}${this.opt('cat', 'kupe', 'Шкаф-купе', 'корпусный или в нишу', this.art.kupe)}${this.opt('cat', 'other', 'Другая мебель', 'прихожая, гардеробная, детская', this.art.other)}</div>`;
+    else if (cur === 'cat') body = `<h2>Что хотите заказать?</h2><div class="qgrid ${MENU.cats.length === 2 ? 'qgrid--2' : ''}">${MENU.cats.map(k => this.opt('cat', k, CATS[k].label, CATS[k].sub, this.art[k])).join('')}</div>`;
     else if (cur === 'layout' && q.cat === 'kitchen') body = `<h2>Какой формы кухня?</h2><div class="qgrid">${this.opt('layout', 'line', 'Прямая', 'вдоль одной стены', this.art.line)}${this.opt('layout', 'corner', 'Угловая', 'буквой Г', this.art.corner)}${this.opt('layout', 'u', 'П-образная', 'вдоль трёх стен', this.art.u)}</div>`;
     else if (cur === 'layout') body = `<h2>Какой шкаф нужен?</h2><div class="qgrid qgrid--2">${this.opt('layout', 'box', 'Корпусный', 'отдельно стоящий', this.art.box)}${this.opt('layout', 'niche', 'Встроенный', 'в нишу, без боковин', this.art.niche)}</div>`;
     else if (cur === 'kind') body = `<h2>Что именно нужно?</h2><div class="qgrid qgrid--chips">${OTHER_KINDS.map(k => `<button class="qchip ${q.kind === k ? 'is-on' : ''}" data-k="kind" data-v="${k}">${k}</button>`).join('')}</div>`;
@@ -503,7 +572,7 @@ const Quiz = {
       body = `<h2>${kit ? 'Общая длина кухни по стенам' : 'Ширина шкафа'}</h2><p class="muted">${kit ? 'Сложите длину всех стен, вдоль которых будет кухня. Можно примерно.' : 'Ширина ниши или места под шкаф. Можно примерно.'}</p>
         <div class="qsize"><output id="sz">${fmt1(q.size)} м</output><input type="range" id="range" min="${min}" max="${max}" step="0.1" value="${q.size}"><div class="qsize__s"><span>${fmt1(min)} м</span><span>${fmt1(max)} м</span></div></div>
         <button class="btn btn--primary btn--lg btn--block" id="go">Далее${icon('right', 18)}</button>`;
-    } else if (cur === 'tier') body = `<h2>Какие материалы рассматриваете?</h2><div class="qgrid">${Object.entries(TIERS).map(([k, t]) => this.opt('tier', k, t.label, t.sub)).join('')}</div>`;
+    } else if (cur === 'tier') body = `<h2>${MENU.tierQ}</h2><div class="qgrid">${Object.entries(TIERS).map(([k, t]) => this.opt('tier', k, t.label, t.sub)).join('')}</div>`;
     else if (cur === 'when') body = `<h2>Когда нужна мебель?</h2><div class="qgrid">${this.opt('when', 'month', 'В ближайший месяц')}${this.opt('when', 'q', 'Через 1–3 месяца')}${this.opt('when', 'look', 'Пока присматриваюсь')}</div>`;
     else if (cur === 'contact') body = `<div class="qready">${icon('check', 22)}<div><b>Расчёт готов!</b><p>Куда отправить цену и подборку фото похожих работ?</p></div></div>
       <form id="cform" class="cform" novalidate>
@@ -516,10 +585,11 @@ const Quiz = {
       </form>`;
     v.innerHTML = `<div class="qbar"><span>${icon('user', 16)}Так клиент видит расчёт на вашем сайте</span><div class="qbar__r">${themeBtn()}<a href="#/board" class="link">Выйти ${icon('x', 14)}</a></div></div>
       <div class="quiz">
-        <div class="quiz__brand"><b>${esc(co)}</b><small>${esc(s.city)} · мебель на заказ</small></div>
-        ${st.done ? '' : `<div class="quiz__top"><h1>Рассчитайте стоимость мебели за 1 минуту</h1><div class="prog"><i style="width:${(st.step + 1) / steps.length * 100}%"></i></div><small class="muted">Шаг ${st.step + 1} из ${steps.length}${st.step ? ` · <button class="link" id="back">${icon('left', 14)}назад</button>` : ''}</small></div>`}
+        ${Brand.t ? Brand.hero(`<h1>${MENU.title}</h1><p>Ответьте на несколько вопросов и сразу увидите ориентир по цене</p>`, `${esc(s.city)}<br>${MENU.tag}`)
+          : `<div class="quiz__brand"><b>${esc(co)}</b><small>${esc(s.city)} · ${MENU.tag}</small></div>`}
+        ${st.done ? '' : `<div class="quiz__top">${Brand.t ? '' : `<h1>${MENU.title}</h1>`}<div class="prog"><i style="width:${(st.step + 1) / steps.length * 100}%"></i></div><small class="muted">Шаг ${st.step + 1} из ${steps.length}${st.step ? ` · <button class="link" id="back">${icon('left', 14)}назад</button>` : ''}</small></div>`}
         <div class="quiz__card">${body}</div>
-        ${st.done ? '' : `<div class="quiz__gift">${icon('gift', 20)}<span>Замер и 3D-проект бесплатно при заказе</span></div>`}
+        ${st.done ? '' : `<div class="quiz__gift">${icon('gift', 20)}<span>${MENU.gift}</span></div>`}
       </div>`;
     this.bind(v);
   },
@@ -555,7 +625,7 @@ const Quiz = {
     const l = Store.lead(this.st.done);
     return `<div class="qres"><small class="muted">${esc(itemOf(l.q))} · ${TIERS[l.q.tier].label}</small>
       <h2>Ориентировочно</h2><div class="qres__p">${range(l.price)}</div>
-      <p>Точную цену назовём после бесплатного замера: она зависит от фурнитуры, столешницы и техники.</p>
+      <p>${MENU.note}</p>
       <div class="qres__ok">${icon('clock', 18)}<span>${esc(l.name)}, мы свяжемся с вами в течение 15 минут ${l.channel === 'call' ? 'по телефону' : 'в ' + CHANNEL[l.channel]}.</span></div>
       <div class="row"><a class="btn btn--primary" href="#/tg">${icon('send', 16)}Что увидел владелец</a><button class="btn btn--outline" id="again">Пройти заново</button></div></div>`;
   },
@@ -588,7 +658,8 @@ const App = {
     const s = Store.s, on = page === 'lead' ? 'board' : page;
     document.title = `${s.company} · Заявки`;
     root.className = '';
-    root.innerHTML = `<header class="top"><a href="#/" class="logo"><span class="logo__m"></span>${esc(s.company)}<small>Заявки</small></a>
+    const mark = Brand.t && Brand.t.logo ? `<span class="logo__img"><img src="${esc(Brand.t.logo)}" alt=""></span>` : '<span class="logo__m"></span>';
+    root.innerHTML = `<header class="top"><a href="#/" class="logo">${mark}${esc(s.company)}<small>Заявки</small></a>
       <div class="top__r"><nav class="nav">${NAV.map(([k, h, ic, t]) => `<a href="${h}" class="${on === k ? 'is-on' : ''}">${icon(ic, 20)}<span>${t}</span>${k === 'tg' ? '<em class="badge" id="tgbadge"></em>' : ''}</a>`).join('')}</nav>${themeBtn()}</div></header>
       <main id="view"></main>`;
     const v = $('#view');
